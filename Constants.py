@@ -33,6 +33,7 @@ CONTEXT_BUTTON_TEXT0 = "Play against friends on the same computer."
 CONTEXT_BUTTON_TEXT1 = "Play against an AI on various difficulty settings."
 CONTEXT_BUTTON_TEXT2 = "Learn how to play so you can become a real pro."
 CONTEXT_BUTTON_TEXT3 = "Look at or replay your previously played games."
+CONTEXT_BUTTON_TEXT4 = "Play online with friends on the same local network."
 
 WIN_MESSAGE_DEFAULT = "Congratulations! {} won with {} pieces and {} lost with {} pieces."
 WIN_MESSAGE_AI_WIN = "Better luck next time! {} won with {} pieces and {} lost with {} pieces."

@@ -392,7 +392,7 @@ class OthelloLogicBoard(Board):
         self.rect.x = 0
         self.rect.y = 0
         self.gui_to_oth = gui_to_oth
-        self._Print, self._Colour, self._Possible = (False, [["E" for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)]), (False, None), (False, {})
+        self._Print, self._Colour, self._Possible = (False, [["E" for _x in range(BOARD_SIZE)] for _y in range(BOARD_SIZE)]), (False, None), (False, {})
 
     def update(self, surface, size_changed=False):
         if (self._Possible[0] and self._Colour[0] and self._Print[0]) or size_changed:
