@@ -241,7 +241,8 @@ class LoadGame(Wrapper):
                                             lambda x: self.on_context_change(0) if x else self.reset_screen(),
                                             text="Couch Play", font=t_gui.font_PT, **BUTTON_STYLE)
         self.ai_button = Ui.ContextButton(ai_func, LBLUE, self.on_ai_click,
-                                          lambda x: self.on_context_change(1) if x else self.reset_screen(), text="AI Play",
+                                          lambda x: self.on_context_change(1) if x else self.reset_screen(),
+                                          text="AI Play",
                                           font=t_gui.font_PT, **BUTTON_STYLE)
         self.blit_text = -1
 
@@ -603,33 +604,44 @@ class MainMenu(State):
         def ai_func(): return (9 * t_gui.r_width / 10 - 110, 19 * t_gui.r_height / 60 - 20, t_gui.r_width / 10 + 90,
                                t_gui.r_height / 22 + 25)
 
-        def how_func(): return (9 * t_gui.r_width / 10 - 110, 7 * t_gui.r_height / 15 + 60, t_gui.r_width / 10 + 90,
+        def net_func(): return (9 * t_gui.r_width / 10 - 110, 7 * t_gui.r_height / 15 - 20, t_gui.r_width / 10 + 90,
                                 t_gui.r_height / 22 + 25)
 
-        def prev_func(): return (9 * t_gui.r_width / 10 - 110, 37 * t_gui.r_height / 60 + 60, t_gui.r_width / 10 + 90,
+        def how_func(): return (9 * t_gui.r_width / 10 - 110, 9 * t_gui.r_height / 15 + 20, t_gui.r_width / 10 + 90,
+                                t_gui.r_height / 22 + 25)
+
+        def prev_func(): return (9 * t_gui.r_width / 10 - 110, 7 * t_gui.r_height / 10 + 35, t_gui.r_width / 10 + 90,
                                  t_gui.r_height / 22 + 25)
 
         self.play_button = Ui.ContextButton(play_func, LBLUE, MainMenu.on_play_click,
                                             lambda x: self.on_context_change(0) if x else self.reset_screen(),
                                             text="Couch Play", font=t_gui.font_PT, **BUTTON_STYLE)
         self.ai_button = Ui.ContextButton(ai_func, LBLUE, self.on_ai_click,
-                                          lambda x: self.on_context_change(1) if x else self.reset_screen(), text="AI Play",
+                                          lambda x: self.on_context_change(1) if x else self.reset_screen(),
+                                          text="AI Play",
                                           font=t_gui.font_PT, **BUTTON_STYLE)
-        self.how_button = Ui.ContextButton(how_func, LBLUE, self.on_how_click,
+
+        self.net_button = Ui.ContextButton(net_func, LBLUE, self.on_net_click,
+                                           lambda x: self.on_context_change(4) if x else self.reset_screen(),
+                                           text="LAN Play", font=t_gui.font_PT, **BUTTON_STYLE)
+
+        self.how_button = Ui.ContextButton(how_func, LBLUE, MainMenu.on_how_click,
                                            lambda x: self.on_context_change(2) if x else self.reset_screen(),
                                            text="How To Play", font=t_gui.font_PT, **BUTTON_STYLE)
+
         self.prev_button = Ui.ContextButton(prev_func, LBLUE, MainMenu.on_prev_click,
                                             lambda x: self.on_context_change(3) if x else self.reset_screen(),
                                             text="Previous Games", font=t_gui.font_PT, **BUTTON_STYLE)
 
-        self.buttons = [self.play_button, self.how_button, self.prev_button, self.ai_button]
+        self.buttons = [self.play_button, self.how_button, self.prev_button, self.ai_button, self.net_button]
 
         self.context_pos = lambda: (10, t_gui.r_height - 20)
 
         self.context = [t_gui.font_PT.render(CONTEXT_BUTTON_TEXT0, True, (0, 0, 0)),
                         t_gui.font_PT.render(CONTEXT_BUTTON_TEXT1, True, (0, 0, 0)),
                         t_gui.font_PT.render(CONTEXT_BUTTON_TEXT2, True, (0, 0, 0)),
-                        t_gui.font_PT.render(CONTEXT_BUTTON_TEXT3, True, (0, 0, 0))]
+                        t_gui.font_PT.render(CONTEXT_BUTTON_TEXT3, True, (0, 0, 0)),
+                        t_gui.font_PT.render(CONTEXT_BUTTON_TEXT4, True, (0, 0, 0))]
 
         t_gui.screen.fill(LGREY)
 
@@ -661,10 +673,15 @@ class MainMenu(State):
 
         t_gui.class_state = LocalVersus()
 
-    def on_how_click(self):
-        """Used to load HelpScreen state."""
+    def on_net_click(self):
 
         t_gui.class_state = AwaitConnection(self)
+
+    @staticmethod
+    def on_how_click():
+        """Used to load HelpScreen state."""
+
+        t_gui.class_state = HelpScreen()
 
     @staticmethod
     def on_prev_click():
@@ -741,30 +758,36 @@ class LocalVersus(State):
         else:
             self.oth_to_gui = oth_to_gui
 
-        def pos_func(): return (t_gui.r_width / 2, t_gui.r_height / 2 + 40, t_gui.min_size / 2 + 50)
+        def pos_func():
+            return (t_gui.r_width / 2, t_gui.r_height / 2 + 40, t_gui.min_size / 2 + 50)
 
         self.board = Ui.OthelloLogicBoard(pos_func, BOARD_SIZE, DGREEN, DBLACK, self.gui_to_oth)
         self.board_logic = None
         self.start_board_ai()
 
-        def back_func(): return (8, 8, t_gui.r_width / 20 + 45, t_gui.r_height / 20 + 12)
+        def back_func():
+            return (8, 8, t_gui.r_width / 20 + 45, t_gui.r_height / 20 + 12)
 
         self.back_button = Ui.Button(back_func, LBLUE, self.click_back, text="Back", font=t_gui.font_PT,
                                      **BUTTON_STYLE)
 
-        def b_pos(): return (t_gui.r_width / 2 - t_gui.min_size / BOARD_SIZE + 1,
-                             35 + t_gui.r_height / 25 + (t_gui.r_height / 4 + 30) / BOARD_SIZE)
+        def b_pos():
+            return (t_gui.r_width / 2 - t_gui.min_size / BOARD_SIZE + 1,
+                    35 + t_gui.r_height / 25 + (t_gui.r_height / 4 + 30) / BOARD_SIZE)
 
-        def b_count(): return ((t_gui.r_height / 4 + 30) // BOARD_SIZE,
-                               (t_gui.r_width / 2 - t_gui.min_size / BOARD_SIZE, 25 + t_gui.r_height / 25))
+        def b_count():
+            return ((t_gui.r_height / 4 + 30) // BOARD_SIZE,
+                    (t_gui.r_width / 2 - t_gui.min_size / BOARD_SIZE, 25 + t_gui.r_height / 25))
 
         self.b_count = Ui.PieceCount(b_pos, b_count, t_gui.font_PT, "B")
 
-        def w_pos(): return (t_gui.r_width / 2 + t_gui.min_size / BOARD_SIZE + 2,
-                             35 + t_gui.r_height / 25 + (t_gui.r_height / 4 + 30) / BOARD_SIZE)
+        def w_pos():
+            return (t_gui.r_width / 2 + t_gui.min_size / BOARD_SIZE + 2,
+                    35 + t_gui.r_height / 25 + (t_gui.r_height / 4 + 30) / BOARD_SIZE)
 
-        def w_count(): return ((t_gui.r_height / 4 + 30) // BOARD_SIZE,
-                               (t_gui.r_width / 2 + t_gui.min_size / BOARD_SIZE, 25 + t_gui.r_height / 25))
+        def w_count():
+            return ((t_gui.r_height / 4 + 30) // BOARD_SIZE,
+                    (t_gui.r_width / 2 + t_gui.min_size / BOARD_SIZE, 25 + t_gui.r_height / 25))
 
         self.w_count = Ui.PieceCount(w_pos, w_count, t_gui.font_PT, "W")
 
@@ -885,6 +908,7 @@ class AI(LocalVersus):
         self.board_logic = Thread(target=Othello.AI, args=(self.gui_to_oth, self.oth_to_gui, self.difficulty))
         self.board_logic.start()
 
+
 class Network(LocalVersus):
     """Network state."""
 
@@ -926,7 +950,8 @@ class Network(LocalVersus):
     def start_board_ai(self):
         """Start the board logic thread, in separate function as type of board can be dependent on state."""
 
-        self.board_logic = Thread(target=Othello.NetworkVersus, args=(self.gui_to_oth, self.oth_to_gui, self.oth_to_network))
+        self.board_logic = Thread(target=Othello.NetworkVersus,
+                                  args=(self.gui_to_oth, self.oth_to_gui, self.oth_to_network))
         self.board_logic.start()
 
     def on_end(self):
@@ -937,6 +962,7 @@ class Network(LocalVersus):
             self.networking_logic.join()
         if self.board_logic:
             self.board_logic.join()
+
 
 class AwaitConnection(Wrapper):
 
@@ -954,10 +980,11 @@ class AwaitConnection(Wrapper):
             return (8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12)
 
         def load_func():
-            return (0.47*self.r_width -20, 9/20*self.r_height - 20, self.r_width / 10 + 40, self.r_height / 10 + 40)
+            return (0.47 * self.r_width - 20, 9 / 20 * self.r_height - 20,
+                    self.r_width / 10 + 40, self.r_height / 10 + 40)
 
         def message_pos():
-            return (0, - 10 + self.r_height *15 / 20)
+            return (0, - 10 + self.r_height * 15 / 20)
 
         def message_size():
             return (self.r_width, self.r_height / 4)
@@ -979,9 +1006,9 @@ class AwaitConnection(Wrapper):
         self.load.update(self.screen_box)
         self.screen_box.blit(self.border_box, (0, 0))
 
-        self.networking_logic = Thread(target = Networking.main, args = (self.gui_to_oth, self.oth_to_network, self.network_to_load), daemon=True)
+        self.networking_logic = Thread(target=Networking.main,
+                                       args=(self.gui_to_oth, self.oth_to_network, self.network_to_load), daemon=True)
         self.networking_logic.start()
-
 
     def event(self, event):
         super(AwaitConnection, self).event(event)
@@ -1020,7 +1047,6 @@ class AwaitConnection(Wrapper):
                 t_gui.class_state = Network(self.gui_to_oth, None, self.oth_to_network, self.networking_logic)
                 t_gui.class_state.event(pygame.event.Event(pygame.MOUSEMOTION))
 
-
     def click_back(self):
         self.on_end()
         t_gui.class_state = self.child
@@ -1033,6 +1059,7 @@ class AwaitConnection(Wrapper):
             self.networking_logic.join()
 
         self.child.on_end()
+
 
 class NetworkError(Wrapper):
 
@@ -1048,7 +1075,7 @@ class NetworkError(Wrapper):
             return (8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12)
 
         def message_pos():
-            return (0, - 10 + self.r_height *1 / 2)
+            return (0, - 10 + self.r_height * 1 / 2)
 
         def message_size():
             return (self.r_width, self.r_height / 4)
@@ -1067,7 +1094,6 @@ class NetworkError(Wrapper):
         pygame.draw.rect(self.screen_box, (30, 39, 46), self.border, border_radius=8)
         pygame.draw.rect(self.screen_box, LGREY, self.border.inflate(-8, -8), border_radius=8)
         self.screen_box.blit(self.border_box, (0, 0))
-
 
     def event(self, event):
         super(NetworkError, self).event(event)
@@ -1102,7 +1128,6 @@ class NetworkError(Wrapper):
         t_gui.class_state.event(pygame.event.Event(pygame.MOUSEMOTION))  # Ensures buttons are properly updated
 
     def on_end(self):
-
         self.child.on_end()
 
 
@@ -1118,7 +1143,8 @@ class LoadSavedGameAI(AI):
         """Start the board logic thread, in separate function as type of board can be dependent on state."""
 
         self.board_logic = Thread(target=Othello.LoadAI,
-                                  args=(self.gui_to_oth, self.oth_to_gui, self.save_name, self.line_count, self.difficulty))
+                                  args=(self.gui_to_oth, self.oth_to_gui,
+                                        self.save_name, self.line_count, self.difficulty))
         self.board_logic.start()
 
 
