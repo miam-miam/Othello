@@ -488,7 +488,7 @@ class EndScreen(Wrapper):
 
 
 class AIDifficultySelect(Wrapper):
-    """Dialogue box used to decide how a game should be loaded."""
+    """Dialogue box used to decide what AI difficulty should be used."""
 
     def __init__(self, child, save_name=None, line_count=None):
         super(AIDifficultySelect, self).__init__(child)
@@ -674,6 +674,7 @@ class MainMenu(State):
         t_gui.class_state = LocalVersus()
 
     def on_net_click(self):
+        """Used to load Network state (Await connection)."""
 
         t_gui.class_state = AwaitConnection(self)
 
@@ -965,6 +966,7 @@ class Network(LocalVersus):
 
 
 class AwaitConnection(Wrapper):
+    """Class that runs whilst awaiting a connection from another peer."""
 
     def __init__(self, child):
         super(AwaitConnection, self).__init__(child)
@@ -1053,7 +1055,6 @@ class AwaitConnection(Wrapper):
         t_gui.class_state.event(pygame.event.Event(pygame.MOUSEMOTION))  # Ensures buttons are properly updated
 
     def on_end(self):
-
         self.oth_to_network.put((LOCAL_IO["Net_End"], None))
         if self.networking_logic:
             self.networking_logic.join()
@@ -1062,6 +1063,7 @@ class AwaitConnection(Wrapper):
 
 
 class NetworkError(Wrapper):
+    """Ran when the network thread quits unexpectedly."""
 
     def __init__(self, child):
         super(NetworkError, self).__init__(child)

@@ -1,3 +1,10 @@
+"""
+This is the main networking file, it runs in a separate thread
+from the main GUI. It contains to main parts:
+The UDP part which listens to other peers and broadcasts to other peers when starting a LAN game.
+The TCP part is used when establishing a connection and communicating with a peer during a game.
+"""
+
 import socket
 from queue import Queue, Empty
 from struct import pack
@@ -7,6 +14,8 @@ from Constants import *
 
 
 class UDP():
+    """Class used for UDP connections."""
+
     def __init__(self, oth_to_network):
         self.oth_to_network = oth_to_network
 
@@ -39,6 +48,8 @@ class UDP():
         print("Connected!")
 
     def udp_loop(self):
+        """Run when using UDP connections."""
+
         while True:
             try:
                 data = self.sock_udp.recvfrom(128)
@@ -76,6 +87,7 @@ class UDP():
 
 
 class TCP():
+    """Used for TCP connections."""
 
     def __init__(self, sock_tcp_data, authority, gui_and_network_to_oth: Queue, oth_to_network: Queue):
 
@@ -92,6 +104,8 @@ class TCP():
         self.tcp_loop()
 
     def tcp_loop(self):
+        """Run when using TCP connections."""
+
         while True:
             try:
                 data = self.sock_tcp_data.recv(256)
@@ -123,6 +137,7 @@ class TCP():
                     print("Sending move")
                     self.sock_tcp_data.send(TCP_DATA_TYPE["Move"] + position)
                 elif get[0] == LOCAL_IO["Net_End"]:
+                    self.sock_tcp_data.close()
                     exit()
 
 
@@ -131,16 +146,20 @@ class TCP():
         print("Disconnected!")
 
 
-# Unsigned only
 def int_to_bytes(x):
+    """Changes an unsigned integer into bytes."""
+
     return x.to_bytes((x.bit_length() + 7) // 8, 'big')
 
 
-# Unsigned only
 def int_from_bytes(x_bytes):
+    """Changes bytes into an unsigned integer."""
+
     return int.from_bytes(x_bytes, 'big')
 
 def main(gui_and_network_to_oth, oth_to_network, network_to_load):
+    """Run by thread to create UDP and TCP connections."""
+
     udp = UDP(oth_to_network)
     network_to_load.put((LOCAL_IO["Net_Loaded"], None))
     TCP(udp.sock_tcp_data, udp.authority, gui_and_network_to_oth, oth_to_network)

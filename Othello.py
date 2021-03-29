@@ -19,6 +19,8 @@ class BoardError(Exception):
 
 
 class HashedBoard:
+    """A special board that can be stored in a dictionary to save pre-calculated AI moves."""
+
     def __init__(self, board, hash_num):
         self.board = board
         self.hash_num = hash_num
@@ -27,18 +29,25 @@ class HashedBoard:
         self.type_of_info = None
 
     def __hash__(self):
+        """
+        The hash function is used in a python dictionary (hash table),
+        this function ensures a zobrist hash of the board is returned.
+        """
+
         return self.hash_num
 
     def __eq__(self, other):
+        """
+        Used for the python dictionary to ensure two boards in the same position
+        are the same board and not a collision.
+        """
+
         return self.board == other.board
 
     def __deepcopy__(self, memo=None):
-        return HashedBoard(deepcopy(self.board), self.hash_num)
+        """Used to copy the board correctly."""
 
-    def prepare_to_add_to_table(self, depth, value, type_of_info):
-        self.depth = depth
-        self.value = value
-        self.type_of_info = type_of_info
+        return HashedBoard(deepcopy(self.board), self.hash_num)
 
 
 class Othello:
@@ -111,16 +120,15 @@ class Othello:
         for x in range(BOARD_SIZE):
             for y in range(BOARD_SIZE):
                 if self.board[y][x] == "E":
-                    w_check, b_check = False, False  # Makes sure to only check positions once
                     for adjacency in self.adjacent((x, y)):
-                        if adjacency[0] == "W" and not w_check:
+                        if adjacency[0] == "W":
                             check_flip_line = self.check_flip_line((x, y), "B", adjacency[1])
                             if check_flip_line:
                                 if (old := self.possible_moves["B"].get((x, y))) is not None:  # Checked with timeit
                                     self.possible_moves["B"][(x, y)] = old + [check_flip_line]
                                 else:
                                     self.possible_moves["B"][(x, y)] = [check_flip_line]
-                        elif adjacency[0] == "B" and not b_check:
+                        elif adjacency[0] == "B":
                             check_flip_line = self.check_flip_line((x, y), "W", adjacency[1])
                             if check_flip_line:
                                 if (old := self.possible_moves["W"].get((x, y))) is not None:
@@ -194,6 +202,12 @@ class Othello:
 
 
 class HashedLocalVersus(Othello):
+    """
+    Class used to update the zobrist hash for the AI.
+    The zobrist hash is a special hash used for games,
+    the hash XORs a random number depending on the piece and location of it everytime a piece moves.
+    This allows hashes to be produced very quickly as they do not need to be recomputed for each move.
+    """
 
     def __init__(self, board_state: HashedBoard, possible_moves, table):
         self.board_state = board_state
@@ -202,11 +216,16 @@ class HashedLocalVersus(Othello):
         self.table = table
 
     def __deepcopy__(self, memo=None):
+        """Allows for efficient copying of the game state."""
+
         return HashedLocalVersus(deepcopy(self.board_state), self.possible_moves,
                                  self.table)  # self.possible_moves and self.table are never changed during runtime
 
     def place(self, pos, current_colour):
-        """Place the piece, flips the correct pieces and then signals a board change."""
+        """
+        Place the piece, flips the correct pieces and then signals a board change.
+        When placing a piece it will XOR the correct numbers to create the correct hash.
+        """
 
         self.board[pos[1]][pos[0]] = current_colour
         self.board_state.hash_num = self.board_state.hash_num ^ self.table[pos[1] * BOARD_SIZE + pos[0]][
@@ -218,7 +237,10 @@ class HashedLocalVersus(Othello):
         return pos
 
     def flip(self, pos):
-        """Flips a piece at a certain position"""
+        """
+        Flips a piece at a certain position.
+        When flipping a piece it will XOR the correct numbers to create the correct hash.
+        """
 
         current_colour = self.board[pos[1]][pos[0]]
         self.board[pos[1]][pos[0]] = FLIP_RULE[current_colour]
@@ -253,7 +275,7 @@ class SaveGame(Othello):
 
 
 class LocalVersus(SaveGame):
-    """A class used to interface with the GUI."""
+    """A class used to interface with the GUI. Used in local games."""
 
     def __init__(self, gui_to_oth, oth_to_gui):
         self.gui_to_oth = gui_to_oth
@@ -306,6 +328,7 @@ class LocalVersus(SaveGame):
 
 
 class NetworkVersus(LocalVersus):
+    """Interfaces with the GUI, used for LAN games."""
 
     def __init__(self, gui_and_network_to_oth, oth_to_gui, oth_to_network):
         self.colour = self.get_colour(gui_and_network_to_oth)
@@ -331,6 +354,7 @@ class NetworkVersus(LocalVersus):
 
     @staticmethod
     def get_colour(gui_to_oth):
+        """Gets the correct colour from the Network thread."""
 
         while True:
             answer = gui_to_oth.get(True)
@@ -342,6 +366,7 @@ class NetworkVersus(LocalVersus):
                 gui_to_oth.put(answer)
 
     def print_board(self):
+        """Prints the board to the GUI. Removes the moves when you are not playing."""
 
         self.oth_to_gui.put((LOCAL_IO["Print"], self.board))
         self.oth_to_gui.put((LOCAL_IO["Colour"], self.playing_colour))
@@ -359,6 +384,8 @@ class AI(LocalVersus):
 
     def __init__(self, gui_to_oth, oth_to_gui, difficulty):
         self.table = [[getrandbits(64) for _ in range(3)] for _ in range(BOARD_SIZE * BOARD_SIZE)]
+        # Creates the zobrist hash table that allows zobrist hashes to be created.
+
         self.ai_colour = "W"
         self.search_dict = {}
         self.difficulty, self.search_time = DIFFICULTY_TO_AI_CONFIG[difficulty]
@@ -401,11 +428,13 @@ class AI(LocalVersus):
         else:
             score, best_move = AI.iterative_deepening(self.get_hash_version(), self.difficulty, self.search_time,
                                                       self.search_dict)
-            # self.search_dict = {}
+
             self.search_dict = {k: (v[0], v[1], (v[2] - 2), v[3]) for (k, v) in self.search_dict.items() if v[2] >= 3}
         return best_move
 
     def get_hash_version(self):
+        """Creates a zobrist hash board of the current board."""
+
         zobrist_hash = 0
         for y in range(BOARD_SIZE):
             for x in range(BOARD_SIZE):
@@ -414,6 +443,13 @@ class AI(LocalVersus):
 
     @staticmethod
     def MTDF(board: HashedLocalVersus, first_guess, lookahead, search_dict):
+        """
+        This is a modified minimax algorithm called Memory-enhanced Test Driver.
+        It works by continually testing certain minimax values to try "zoom" into the correct minimax value.
+        Since it runs the minimax algorithm several times it must ensure that the minimax algorithm uses memory
+        to save previously calculated values.
+        """
+
         guess = first_guess
         upper_bound = float('+inf')
         lower_bound = float('-inf')
@@ -431,6 +467,11 @@ class AI(LocalVersus):
 
     @staticmethod
     def iterative_deepening(board: HashedLocalVersus, difficulty, search_time, search_dict):
+        """
+        Iterative deepening will bit by bit increase the depth of the search
+        this ensures that the algorithm can be stopped if it takes too long.
+        """
+
         first_guess, even_guess, odd_guess = 0, 0, 0
         start_time = time()
         for depth in range(1, difficulty):
@@ -441,7 +482,6 @@ class AI(LocalVersus):
                 first_guess, move = AI.MTDF(board, odd_guess, depth, search_dict)
                 odd_guess = first_guess
             if start_time + search_time <= time():
-                print("depth reached was:", depth)
                 break
             if start_time + 1 > time():
                 sleep(1.5)
@@ -450,6 +490,8 @@ class AI(LocalVersus):
 
     @staticmethod
     def check_if_terminal(board: HashedLocalVersus):
+        """Will check if the board is in an end state."""
+
         if board.possible_moves["B"] == board.possible_moves["W"] == {}:
             return True
         elif board.possible_moves["B"] == {} or board.possible_moves["W"] == {}:
@@ -465,6 +507,8 @@ class AI(LocalVersus):
 
     @staticmethod
     def terminal_utility(othello: HashedLocalVersus):
+        """Counts the score of a board if an end state."""
+
         count = list(
             (v, k) for (k, v) in sorted(othello.count_pieces().items(), key=lambda item: item[1], reverse=True) if
             k != "E")  # Sort list of piece count in descending order
@@ -477,7 +521,11 @@ class AI(LocalVersus):
 
     @staticmethod
     def heuristic_utility(othello: HashedLocalVersus):
-        # https://courses.cs.washington.edu/courses/cse573/04au/Project/mini1/RUSSIA/Final_Paper.pdf
+        """
+        Calculates the heuristic utility of a board. The board values are based off this paper:
+        https://courses.cs.washington.edu/courses/cse573/04au/Project/mini1/RUSSIA/Final_Paper.pdf
+        """
+
         count = othello.count_pieces()
         heuristic_piece_count = (count["W"] - count["B"]) / (count["W"] + count["B"])
 
@@ -541,6 +589,8 @@ class AI(LocalVersus):
 
     @staticmethod
     def dumb_line_iterator(y, x, line_diff):  # working in (y,x)
+        """Will iterate through a line without caring about the pieces it iterates through."""
+
         while 0 >= x > BOARD_SIZE and 0 >= y > BOARD_SIZE:
             yield y, x
             y += line_diff[0]
@@ -548,9 +598,15 @@ class AI(LocalVersus):
 
     @staticmethod
     def minimax(board: HashedLocalVersus, alpha, beta, maximising_player, initial, lookahead, searched_moves):
+        """
+        The minimax algorithm with memory to ensure that values are not computed several times.
+        This version uses alpha beta to cut values that would not affect the final value.
+        Some of the code is based off this thread:
+        https://www.gamedev.net/forums/topic.asp?topic_id=503234
+        """
 
         if (search := searched_moves.get(board.board_state)) is not None and search[2] >= lookahead:
-            # https://www.gamedev.net/forums/topic.asp?topic_id=503234
+
             value, type_of_info, depth, move = search
             if type_of_info == 1:
                 if initial:
