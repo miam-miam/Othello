@@ -149,15 +149,16 @@ class Wrapper:
 class Scroll(State):
     """Abstract class used to scroll."""
 
-    def __init__(self, height):
+    def __init__(self, height, keep_old=False):
         super().__init__()
         self.scroll_y = 0
         self.height_func = height
         self.height = height()
         self.intermediate = pygame.surface.Surface((t_gui.r_width, self.height))
         self.intermediate.fill(LGREY)
+        self.keep_old = keep_old
 
-        def back_func(): return (8, 8, t_gui.r_width / 20 + 45, t_gui.r_height / 20 + 12)
+        def back_func(): return 8, 8, t_gui.r_width / 20 + 45, t_gui.r_height / 20 + 12
 
         self.back_button = Ui.Button(back_func, LBLUE, self.click_back, text="Back", font=t_gui.font_PT,
                                      **BUTTON_STYLE)
@@ -167,10 +168,20 @@ class Scroll(State):
 
     def event(self, event):
         if event.type == pygame.VIDEORESIZE:
-            self.height = self.height_func()
-            self.intermediate = pygame.surface.Surface((t_gui.r_width, self.height))
-            self.intermediate.fill(LGREY)
-            self.check_scroll()
+            if self.keep_old:   # Very slow but should not run too much
+                self.intermediate = pygame.surface.Surface((t_gui.r_width, 8 * t_gui.r_height))
+                self.intermediate.fill(LGREY)
+                self.height = self.height_func()
+                intermediate = self.intermediate.copy()
+                self.intermediate = pygame.surface.Surface((t_gui.r_width, self.height))
+                self.intermediate.fill(LGREY)
+                self.intermediate.blit(intermediate, (0, 0))
+                self.check_scroll()
+            else:
+                self.height = self.height_func()
+                self.intermediate = pygame.surface.Surface((t_gui.r_width, self.height))
+                self.intermediate.fill(LGREY)
+                self.check_scroll()
 
         elif event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
             if event.key == pygame.K_UP:
@@ -227,12 +238,15 @@ class LoadGame(Wrapper):
         self.screen_box.set_colorkey((0, 0, 0))
         self.font = pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 13)
 
-        def back_func(): return (8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12)
+        def back_func(): return 8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12
 
         def play_func(): return (self.r_width / 40 + 45, self.r_height / 2 - 20, self.r_width / 10 + 70,
                                  self.r_height / 22 + 25)
 
         def ai_func(): return (self.r_width * 7 / 8 - 115, self.r_height / 2 - 20, self.r_width / 10 + 70,
+                               self.r_height / 22 + 25)
+
+        def net_func(): return (self.r_width * 0.45 - 35, self.r_height / 2 - 20, self.r_width / 10 + 70,
                                self.r_height / 22 + 25)
 
         self.back_button = Ui.Button(back_func, LBLUE, self.click_back, text="Back", font=t_gui.font_PT,
@@ -244,14 +258,19 @@ class LoadGame(Wrapper):
                                           lambda x: self.on_context_change(1) if x else self.reset_screen(),
                                           text="AI Play",
                                           font=t_gui.font_PT, **BUTTON_STYLE)
+        self.net_button = Ui.ContextButton(net_func, LBLUE, self.on_net_click,
+                                          lambda x: self.on_context_change(2) if x else self.reset_screen(),
+                                          text="LAN Play",
+                                          font=t_gui.font_PT, **BUTTON_STYLE)
         self.blit_text = -1
 
         self.context_pos = lambda: (10, self.r_height - 30)
 
-        self.context = [self.font.render(CONTEXT_BUTTON_TEXT0, True, (0, 0, 0)),
-                        self.font.render(CONTEXT_BUTTON_TEXT1, True, (0, 0, 0))]
+        self.context = [self.font.render(CONTEXT_BUTTON_TEXT0, True, (1, 1, 1)),
+                        self.font.render(CONTEXT_BUTTON_TEXT1, True, (1, 1, 1)),
+                        self.font.render(CONTEXT_BUTTON_TEXT4, True, (1, 1, 1))]
 
-        self.buttons = [self.back_button, self.ai_button, self.play_button]
+        self.buttons = [self.back_button, self.ai_button, self.play_button, self.net_button]
 
         for button in self.buttons:
             button.update_scroll((-t_gui.r_width * 1 / 6, -t_gui.r_height * 1 / 6))
@@ -307,6 +326,11 @@ class LoadGame(Wrapper):
 
         t_gui.class_state = AIDifficultySelect(self, self.save_name, self.current_line)
 
+    def on_net_click(self):
+        """Function called when net play button is clicked."""
+
+        t_gui.class_state = AwaitConnection(self, self.save_name, self.current_line)
+
 
 class EndScreen(Wrapper):
     """Dialogue box used to congratulate winner."""
@@ -321,26 +345,26 @@ class EndScreen(Wrapper):
         self.screen_box = pygame.surface.Surface((t_gui.r_width * 2 / 3, t_gui.r_height * 2 / 3))
         self.screen_box.set_colorkey((0, 0, 0))
         self.font = pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 13)
-        self.big_font = pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 20)
+        self.big_font = pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 22)
 
         def back_func():
-            return (8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12)
+            return 8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12
 
         def play_again_func():
-            return (self.r_width / 40 + 5, self.r_height * 3 / 4 - 10, self.r_width / 10 + 110, self.r_height / 22 + 25)
+            return self.r_width / 40 + 5, self.r_height * 3 / 4 - 10, self.r_width / 10 + 110, self.r_height / 22 + 25
 
         def prev_func():
             return (self.r_width * 7 / 8 - 115, self.r_height * 3 / 4 - 10, self.r_width / 10 + 110,
                     self.r_height / 22 + 25)
 
         def confetti_func():
-            return (4, 4, self.r_width - 8, self.r_height - 8)
+            return 4, 4, self.r_width - 8, self.r_height - 8
 
         def message_pos():
-            return (20, 30 + t_gui.r_height / 20)
+            return 20, 30 + t_gui.r_height / 20
 
         def message_size():
-            return (self.r_width - 20, self.r_height)
+            return self.r_width - 20, self.r_height
 
         self.back_button = Ui.Button(back_func, LBLUE, self.click_back, text="Back", font=t_gui.font_PT,
                                      **BUTTON_STYLE)
@@ -359,11 +383,11 @@ class EndScreen(Wrapper):
         self.context_pos = lambda: (10, self.r_height - 25)
 
         if state_name == "LocalVersus":
-            state_play = self.font.render(CONTEXT_BUTTON_TEXT0, True, (0, 0, 0))
+            state_play = self.font.render(CONTEXT_BUTTON_TEXT0, True, (1, 1, 1))
         else:
-            state_play = self.font.render(CONTEXT_BUTTON_TEXT1, True, (0, 0, 0))
+            state_play = self.font.render(CONTEXT_BUTTON_TEXT1, True, (1, 1, 1))
 
-        self.context = [state_play, self.font.render(CONTEXT_BUTTON_TEXT3, True, (0, 0, 0))]
+        self.context = [state_play, self.font.render(CONTEXT_BUTTON_TEXT3, True, (1, 1, 1))]
 
         self.buttons = [self.back_button, self.prev_button, self.play_again_button]
 
@@ -500,7 +524,7 @@ class AIDifficultySelect(Wrapper):
         self.screen_box.set_colorkey((0, 0, 0))
         self.font = pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 13)
 
-        def back_func(): return (8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12)
+        def back_func(): return 8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12
 
         def easy_func(): return (self.r_width / 40 + 45, self.r_height / 2 - 50, self.r_width / 10 + 70,
                                  self.r_height / 22 + 25)
@@ -598,6 +622,19 @@ class MainMenu(State):
     def __init__(self):
         super().__init__()
 
+        def pos_func():
+            return t_gui.r_width / 3, t_gui.r_height / 2 + 10, t_gui.min_size / 2 + 50
+
+        self.board = Ui.Board(pos_func, BOARD_SIZE, DGREEN, DBLACK, LAST_BOARD)
+
+        def pos_text():
+            return t_gui.r_width / 3 - (t_gui.min_size / 4 + 25) + 2,  t_gui.r_height / 6 - 40
+
+        def size_text():
+            return t_gui.r_width / 3 - (t_gui.min_size / 4 + 25) + 2 + t_gui.min_size / 2 + 50, 100
+
+        self.text = Ui.Paragraph(MAIN_MENU_TEXT, pos_text, pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 30), size_text, (0, 0, 0), True)
+
         def play_func(): return (9 * t_gui.r_width / 10 - 110, t_gui.r_height / 6 - 20, t_gui.r_width / 10 + 90,
                                  t_gui.r_height / 22 + 25)
 
@@ -644,10 +681,15 @@ class MainMenu(State):
                         t_gui.font_PT.render(CONTEXT_BUTTON_TEXT4, True, (0, 0, 0))]
 
         t_gui.screen.fill(LGREY)
+        self.board.update(t_gui.screen)
+        self.text.update(t_gui.screen)
 
     def event(self, event):
         if event.type == pygame.VIDEORESIZE:
             t_gui.screen.fill(LGREY)
+            self.board.size_update(t_gui.screen)
+            self.text.size_update(t_gui.screen)
+
         for button in self.buttons:
             button.check_event(event)
 
@@ -659,6 +701,8 @@ class MainMenu(State):
         """Used to reset the context sentence."""
 
         t_gui.screen.fill(LGREY)
+        self.board.update(t_gui.screen)
+        self.text.update(t_gui.screen)
         for button in self.buttons:
             button.update(t_gui.screen)
 
@@ -700,48 +744,60 @@ class HelpScreen(Scroll):
     """Help screen state that shows how to play the game."""
 
     def __init__(self):
-        super().__init__(lambda: 8 * t_gui.r_height)
+        super().__init__(lambda: 8 * t_gui.r_height, True)
 
-        def pos_pg1(): return (20, 30 + t_gui.r_height / 20)
+        def pos_pg1(): return 20, 30 + t_gui.r_height / 20
 
-        def size_pg1(): return (t_gui.r_width - 20, t_gui.r_height // 5 - 20)
+        def size_pg1(): return t_gui.r_width - 20, t_gui.r_height // 5 - 20
 
-        self.help_pg1 = Ui.Paragraph(HELP_TEXT1, pos_pg1, t_gui.font_PT, size_pg1)
+        self.help_pg1 = Ui.Paragraph(HELP_TEXT1, pos_pg1, t_gui.font_PT, size_pg1, (0, 0, 0), True)
 
-        def size_img1(): return (t_gui.r_width // 2, t_gui.r_height // 2)
+        def pos_b1():
+            return (
+                t_gui.r_width / 2, t_gui.min_size / 4 + 25 + self.help_pg1.size_update(self.intermediate) + 10,
+                t_gui.min_size / 2 + 50)
 
-        self.ex_img1 = Ui.Image(path.join(RES_DIR, "Example.png"), size_img1, 800)
+        self.ex_board1 = Ui.Board(pos_b1, BOARD_SIZE, DGREEN, DBLACK, [[START_POS.get((x, y), "E") for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)])
 
-        def pos_pg2(): return (20, 10 + self.ex_img1.size_update(self.intermediate, (
-            t_gui.r_width / 2, self.help_pg1.size_update(self.intermediate) + 5)))
+        def pos_pg2(): return 20, 20 + self.ex_board1.size_update(self.intermediate).bottom
 
-        def size_pg2(): return (t_gui.r_width - 20, t_gui.r_height // 5 - 20)
+        def size_pg2(): return t_gui.r_width - 20, t_gui.r_height // 5 - 20
 
-        self.help_pg2 = Ui.Paragraph(HELP_TEXT2, pos_pg2, t_gui.font_PT, size_pg2)
+        self.help_pg2 = Ui.Paragraph(HELP_TEXT2, pos_pg2, t_gui.font_PT, size_pg2, (0, 0, 0), True)
 
-        self.ex_img2 = Ui.Image(path.join(RES_DIR, "Example1.png"),
-                                lambda: (t_gui.r_width // 2, t_gui.r_height // 2), 800)
+        def pos_b2():
+            return (
+                t_gui.r_width / 2, t_gui.min_size / 4 + 25 + self.help_pg2.size_update(self.intermediate) + 10,
+                t_gui.min_size / 2 + 50)
 
-        def pos_pg3(): return (20, 10 + self.ex_img2.size_update(self.intermediate, (
-            t_gui.r_width / 2, self.help_pg2.size_update(self.intermediate) + 5)))
+        self.ex_board2 = Ui.Board(pos_b2, BOARD_SIZE, DGREEN, DBLACK, [[START_POS.get((x, y), "E") for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)], HELP_POSSIBLE1)
 
-        def size_pg3(): return (t_gui.r_width - 20, t_gui.r_height // 5 - 20)
+        def pos_pg3(): return 20, 20 + self.ex_board2.size_update(self.intermediate).bottom
 
-        self.help_pg3 = Ui.Paragraph(HELP_TEXT2, pos_pg3, t_gui.font_PT, size_pg3)
+        def size_pg3(): return t_gui.r_width - 20, t_gui.r_height // 5 - 20
 
-        self.ex_img3 = Ui.Image(path.join(RES_DIR, "Example2.png"),
-                                lambda: (t_gui.r_width // 2, t_gui.r_height // 2), 800)
-        self.ex_img3.size_update(self.intermediate,
-                                 (t_gui.r_width / 2, self.help_pg3.size_update(self.intermediate) + 5))
+        self.help_pg3 = Ui.Paragraph(HELP_TEXT3, pos_pg3, t_gui.font_PT, size_pg3, (0, 0, 0), True)
 
-    def event(self, event):
-        super(HelpScreen, self).event(event)
-        if event.type == pygame.VIDEORESIZE:
-            self.ex_img3.size_update(self.intermediate,
-                                     (t_gui.r_width / 2, self.help_pg3.size_update(self.intermediate) + 5))
+        def pos_b3():
+            return (
+                t_gui.r_width / 2, t_gui.min_size / 4 + 25 + self.help_pg3.size_update(self.intermediate) + 10,
+                t_gui.min_size / 2 + 50)
 
-    def loop(self):
-        super(HelpScreen, self).loop()
+        self.ex_board3 = Ui.Board(pos_b3, BOARD_SIZE, DGREEN, DBLACK, HELP_BOARD, HELP_POSSIBLE2)
+
+        def pos_pg4(): return 20, 20 + self.ex_board3.size_update(self.intermediate).bottom
+
+        def size_pg4(): return t_gui.r_width - 20, t_gui.r_height // 5 - 20
+
+        self.help_pg4 = Ui.Paragraph(HELP_TEXT4, pos_pg4, t_gui.font_PT, size_pg4, (0, 0, 0), True)
+
+        self.height_func = lambda: self.help_pg4.size_update(self.intermediate) + 10
+        self.height = self.height_func()
+        intermediate = self.intermediate.copy()
+        self.intermediate = pygame.surface.Surface((t_gui.r_width, self.height))
+        self.intermediate.fill(LGREY)
+        self.intermediate.blit(intermediate, (0, 0))
+        self.check_scroll()
 
 
 class LocalVersus(State):
@@ -760,14 +816,14 @@ class LocalVersus(State):
             self.oth_to_gui = oth_to_gui
 
         def pos_func():
-            return (t_gui.r_width / 2, t_gui.r_height / 2 + 40, t_gui.min_size / 2 + 50)
+            return t_gui.r_width / 2, t_gui.r_height / 2 + 40, t_gui.min_size / 2 + 50
 
         self.board = Ui.OthelloLogicBoard(pos_func, BOARD_SIZE, DGREEN, DBLACK, self.gui_to_oth)
         self.board_logic = None
         self.start_board_ai()
 
         def back_func():
-            return (8, 8, t_gui.r_width / 20 + 45, t_gui.r_height / 20 + 12)
+            return 8, 8, t_gui.r_width / 20 + 45, t_gui.r_height / 20 + 12
 
         self.back_button = Ui.Button(back_func, LBLUE, self.click_back, text="Back", font=t_gui.font_PT,
                                      **BUTTON_STYLE)
@@ -845,7 +901,7 @@ class LocalVersus(State):
 
         self.gui_to_oth.put((LOCAL_IO["End"], None))
         if self.board_logic:
-            self.board_logic.join()
+            self.board_logic.join(0.5)
 
     def start_board_ai(self):
         """Start the board logic thread, in separate function as type of board can be dependent on state."""
@@ -906,16 +962,17 @@ class AI(LocalVersus):
     def start_board_ai(self):
         """Start the board logic thread, in separate function as type of board can be dependent on state."""
 
-        self.board_logic = Thread(target=Othello.AI, args=(self.gui_to_oth, self.oth_to_gui, self.difficulty))
+        self.board_logic = Thread(target=Othello.AI, args=(self.gui_to_oth, self.oth_to_gui, self.difficulty), daemon=True)
         self.board_logic.start()
 
 
 class Network(LocalVersus):
     """Network state."""
 
-    def __init__(self, gui_to_oth, oth_to_gui, oth_to_network, networking_logic):
+    def __init__(self, gui_to_oth, oth_to_gui, oth_to_network, networking_logic, save_name):
         self.networking_logic = networking_logic
         self.oth_to_network = oth_to_network
+        self.save_name = save_name
         super().__init__(gui_to_oth, oth_to_gui)
 
     def loop(self):
@@ -952,7 +1009,7 @@ class Network(LocalVersus):
         """Start the board logic thread, in separate function as type of board can be dependent on state."""
 
         self.board_logic = Thread(target=Othello.NetworkVersus,
-                                  args=(self.gui_to_oth, self.oth_to_gui, self.oth_to_network))
+                                  args=(self.gui_to_oth, self.oth_to_gui, self.oth_to_network, self.save_name))
         self.board_logic.start()
 
     def on_end(self):
@@ -960,15 +1017,15 @@ class Network(LocalVersus):
         self.oth_to_network.put((LOCAL_IO["Net_End"], None))
         self.gui_to_oth.put((LOCAL_IO["End"], None))
         if self.networking_logic:
-            self.networking_logic.join()
+            self.networking_logic.join(0.5)
         if self.board_logic:
-            self.board_logic.join()
+            self.board_logic.join(0.5)
 
 
 class AwaitConnection(Wrapper):
     """Class that runs whilst awaiting a connection from another peer."""
 
-    def __init__(self, child):
+    def __init__(self, child, save_name=None, current_line=None):
         super(AwaitConnection, self).__init__(child)
         self.network_to_load, self.gui_to_oth, self.oth_to_network = Queue(), Queue(), Queue()
 
@@ -979,17 +1036,17 @@ class AwaitConnection(Wrapper):
         self.big_font = pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 20)
 
         def back_func():
-            return (8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12)
+            return 8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12
 
         def load_func():
             return (0.47 * self.r_width - 20, 9 / 20 * self.r_height - 20,
                     self.r_width / 10 + 40, self.r_height / 10 + 40)
 
         def message_pos():
-            return (0, - 10 + self.r_height * 15 / 20)
+            return 0, - 10 + self.r_height * 15 / 20
 
         def message_size():
-            return (self.r_width, self.r_height / 4)
+            return self.r_width, self.r_height / 4
 
         self.back_button = Ui.Button(back_func, LBLUE, self.click_back, text="Back", font=t_gui.font_PT,
                                      **BUTTON_STYLE)
@@ -1009,7 +1066,7 @@ class AwaitConnection(Wrapper):
         self.screen_box.blit(self.border_box, (0, 0))
 
         self.networking_logic = Thread(target=Networking.main,
-                                       args=(self.gui_to_oth, self.oth_to_network, self.network_to_load), daemon=True)
+                                       args=(self.gui_to_oth, self.oth_to_network, self.network_to_load, save_name, current_line), daemon=True)
         self.networking_logic.start()
 
     def event(self, event):
@@ -1046,7 +1103,8 @@ class AwaitConnection(Wrapper):
             pass
         else:
             if get[0] == LOCAL_IO["Net_Loaded"]:
-                t_gui.class_state = Network(self.gui_to_oth, None, self.oth_to_network, self.networking_logic)
+                print("Loaded")
+                t_gui.class_state = Network(self.gui_to_oth, None, self.oth_to_network, self.networking_logic, get[1])
                 t_gui.class_state.event(pygame.event.Event(pygame.MOUSEMOTION))
 
     def click_back(self):
@@ -1057,7 +1115,7 @@ class AwaitConnection(Wrapper):
     def on_end(self):
         self.oth_to_network.put((LOCAL_IO["Net_End"], None))
         if self.networking_logic:
-            self.networking_logic.join()
+            self.networking_logic.join(0.5)
 
         self.child.on_end()
 
@@ -1074,13 +1132,13 @@ class NetworkError(Wrapper):
         self.big_font = pygame.font.Font(path.join(RES_DIR, "PTC75F.ttf"), 20)
 
         def back_func():
-            return (8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12)
+            return 8, 8, self.r_width / 20 + 45, self.r_height / 20 + 12
 
         def message_pos():
-            return (0, - 10 + self.r_height * 1 / 2)
+            return 0, - 10 + self.r_height * 1 / 2
 
         def message_size():
-            return (self.r_width, self.r_height / 4)
+            return self.r_width, self.r_height / 4
 
         self.back_button = Ui.Button(back_func, LBLUE, self.click_back, text="Back", font=t_gui.font_PT,
                                      **BUTTON_STYLE)

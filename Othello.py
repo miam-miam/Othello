@@ -4,7 +4,7 @@ games as well as interfacing with the GUI.
 """
 
 from copy import deepcopy
-from os import path, remove
+from os import path, remove, listdir, mkdir
 from tempfile import NamedTemporaryFile
 from random import getrandbits
 from time import time, sleep
@@ -53,8 +53,17 @@ class HashedBoard:
 class Othello:
     """An abstract class that deals with all Othello logic"""
 
-    def __init__(self):
-        self.board = [[START_POS.get((x, y), "E") for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)]
+    def __init__(self, board=None):
+        if board is not None:
+            self.board = board
+        else:
+            self.board = LAST_BOARD
+            board = [[START_POS.get((x, y), "E") for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)]
+            # Not directly assigning so I can keep same reference for other files to use the last board
+            for y in range(BOARD_SIZE):
+                for x in range(BOARD_SIZE):
+                    self.board[y][x] = board[y][x]
+
         self.possible_moves = {"W": {}, "B": {}}
         self.board_change()
 
@@ -265,9 +274,24 @@ class SaveGame(Othello):
         """
 
         if self.init:
-            save_file = NamedTemporaryFile(mode="a", delete=False, dir=SAVE_DIR, suffix=SAVE_SUFFIX)
+            try:
+                save_file = NamedTemporaryFile(mode="a", delete=False, dir=SAVE_DIR, suffix=SAVE_SUFFIX)
+            except FileNotFoundError:
+                mkdir(SAVE_DIR)
+                save_file = NamedTemporaryFile(mode="a", delete=False, dir=SAVE_DIR, suffix=SAVE_SUFFIX)
             self.saving_name = save_file.name
             save_file.close()
+
+            try:
+                # Check if more than 15 saved games are stored
+                files = listdir(SAVE_DIR)
+                if len(files) > 14:
+                    files = sorted(listdir(SAVE_DIR), reverse=True, key=lambda x: path.getmtime(path.join(SAVE_DIR, x)))[14:]
+                    for file in files:
+                        remove(path.join(SAVE_DIR, file))
+            except FileNotFoundError:
+                print("Error encountered... Are you running the same Othello process twice?")
+
             self.init = False
         instruction = str(instruction[0]) + "," + str(instruction[1]) + "\n"
         with open(path.join(SAVE_DIR, self.saving_name), 'a') as file:
@@ -330,9 +354,10 @@ class LocalVersus(SaveGame):
 class NetworkVersus(LocalVersus):
     """Interfaces with the GUI, used for LAN games."""
 
-    def __init__(self, gui_and_network_to_oth, oth_to_gui, oth_to_network):
+    def __init__(self, gui_and_network_to_oth, oth_to_gui, oth_to_network, save_name):
         self.colour = self.get_colour(gui_and_network_to_oth)
         self.oth_to_network = oth_to_network
+        self.save_name = save_name
         super(NetworkVersus, self).__init__(gui_and_network_to_oth, oth_to_gui)
 
     def get_pos(self):
@@ -349,6 +374,8 @@ class NetworkVersus(LocalVersus):
             elif answer[0] == LOCAL_IO["Net_Click"]:
                 if self.playing_colour != self.colour:
                     return answer[1]
+            elif answer[0] == LOCAL_IO["Net_Load"]:
+                self.load(answer[1])
             else:
                 self.gui_to_oth.put(answer)
 
@@ -377,6 +404,30 @@ class NetworkVersus(LocalVersus):
         count = self.count_pieces()
         del count["E"]
         self.oth_to_gui.put((LOCAL_IO["Count"], count))
+
+    @staticmethod
+    def get_pos_from_file(line):
+        """Gets the instruction back from the file."""
+
+        line = line.split(",")
+        return int(line[0]), int(line[1])
+
+    def load(self, commands):
+        """Loads the save file."""
+
+        for line, self.playing_colour in zip(commands.splitlines(), self.end_game_iterator(self.playing_colour)):
+            if not (tup := self.can_be_placed(self.get_pos_from_file(line), self.playing_colour))[1]:  # Walrus op
+                raise BoardError("Incorrect Board")
+            self.save(tup[0])
+            self.place(tup[0], self.playing_colour)
+        self.playing_colour = FLIP_RULE[self.playing_colour]
+        self.print_board()
+
+    def play(self):
+        """Starts playing."""
+        if self.save_name is not None:
+            self.load(self.save_name)
+        super(NetworkVersus, self).play()
 
 
 class AI(LocalVersus):
@@ -438,11 +489,12 @@ class AI(LocalVersus):
         zobrist_hash = 0
         for y in range(BOARD_SIZE):
             for x in range(BOARD_SIZE):
-                zobrist_hash = zobrist_hash ^ self.table[y * BOARD_SIZE + x][XOR_INDICES[self.board[y][x]]]
+                zobrist_hash ^= self.table[y * BOARD_SIZE + x][XOR_INDICES[self.board[y][x]]]   # XOR
+
         return HashedLocalVersus(HashedBoard(deepcopy(self.board), zobrist_hash), self.possible_moves, self.table)
 
     @staticmethod
-    def MTDF(board: HashedLocalVersus, first_guess, lookahead, search_dict):
+    def mtdf(board: HashedLocalVersus, first_guess, lookahead, search_dict):
         """
         This is a modified minimax algorithm called Memory-enhanced Test Driver.
         It works by continually testing certain minimax values to try "zoom" into the correct minimax value.
@@ -476,16 +528,15 @@ class AI(LocalVersus):
         start_time = time()
         for depth in range(1, difficulty):
             if depth % 2 == 0:
-                first_guess, move = AI.MTDF(board, even_guess, depth, search_dict)
+                first_guess, move = AI.mtdf(board, even_guess, depth, search_dict)
                 even_guess = first_guess
             else:
-                first_guess, move = AI.MTDF(board, odd_guess, depth, search_dict)
+                first_guess, move = AI.mtdf(board, odd_guess, depth, search_dict)
                 odd_guess = first_guess
             if start_time + search_time <= time():
                 break
             if start_time + 1 > time():
                 sleep(1.5)
-        print(time() - start_time)
         return first_guess, move
 
     @staticmethod
@@ -531,6 +582,7 @@ class AI(LocalVersus):
 
         white_move_count = len(othello.possible_moves["W"])
         black_move_count = len(othello.possible_moves["B"])
+
         heuristic_mobility = (white_move_count - black_move_count) / (white_move_count + black_move_count)
 
         piece_to_heuristic = {"W": 1, "B": -1, "E": 0}
@@ -548,37 +600,65 @@ class AI(LocalVersus):
         else:
             heuristic_corner_capture = 0
 
-        white_unstable = set()  # prevent same position from being counted twice
-        black_unstable = set()
-        for pos in othello.possible_moves["B"].keys():
-            for (x, y, step_tup) in othello.line_iterator(pos, "B", othello.possible_moves["B"][pos]):
-                white_unstable.add((x, y))
-        for pos in othello.possible_moves["W"].keys():
-            for (x, y, step_tup) in othello.line_iterator(pos, "W", othello.possible_moves["W"][pos]):
-                black_unstable.add((x, y))
+        # Check for stability (Using an estimation as computationally expensive to correctly calculate
+        if othello.board[0][0] != 'E' or othello.board[0][BOARD_SIZE - 1] != 'E' or othello.board[BOARD_SIZE - 1][0] != 'E' or \
+                othello.board[BOARD_SIZE - 1][BOARD_SIZE - 1] != 'E':
+            tracked_black = set((y, x) for x in range(BOARD_SIZE) for y in range(BOARD_SIZE) if othello.board[y][x] == 'B')
+            tracked_white = set((y, x) for x in range(BOARD_SIZE) for y in range(BOARD_SIZE) if othello.board[y][x] == 'W')
+            for y, x, position in AI.stability_iterator():
+                if position == 1:
+                    last_black_opposing = 'N'  # N for None
+                    last_white_opposing = 'N'
+                elif position == 2:
+                    last_black_opposing = 'N'
+                    last_white_opposing = 'N'
+                    if len(tracked_black) == 0 and len(tracked_white) == 0:
+                        break
+                if last_black_opposing != 'N':
+                    if othello.board[y][x] == 'E':
+                        if len(last_black_empty) > 0:
+                            tracked_black -= last_black_empty
+                            last_black_empty = set()
+                        last_black_opposing = 'E'
 
-        # Only checks for stables in corner lines
-        white_stable = list()
-        black_stable = list()
-        for (y, x, line_diff) in SAFE_LINES:
-            if othello.board[y][x] == "E":
-                pass
-            elif othello.board[y][x] == "W":
-                white_stable.append((y, x))
-                for (yy, xx) in AI.dumb_line_iterator(y, x, line_diff):
-                    if othello.board[y][x] == "W" and (yy, xx) not in white_stable:
-                        white_stable.append((yy, xx))
+                    elif othello.board[y][x] == 'W':
+                        if len(last_black_empty) > 0:
+                            if last_black_opposing == 'E':
+                                tracked_black -= last_black_empty
+                                last_black_empty = set()
+                        else:
+                            last_black_opposing = 'W'
                     else:
-                        break
-            else:
-                black_stable.append((y, x))
-                for (yy, xx) in AI.dumb_line_iterator(y, x, line_diff):
-                    if othello.board[y][x] == "B" and (yy, xx) not in black_stable:
-                        black_stable.append((yy, xx))
+                        last_black_empty.add((y, x))
+                elif othello.board[y][x] == 'E' or othello.board[y][x] == 'W':
+                    last_black_opposing = othello.board[y][x]
+                    last_black_empty = set()
+
+                if last_white_opposing != 'N':
+                    if othello.board[y][x] == 'E':
+                        if len(last_white_empty) > 0:
+                            tracked_white -= last_white_empty
+                            last_white_empty = set()
+                        last_white_opposing = 'E'
+
+                    elif othello.board[y][x] == 'B':
+                        if len(last_white_empty) > 0:
+                            if last_white_opposing == 'E':
+                                tracked_white -= last_white_empty
+                                last_white_empty = set()
+                        else:
+                            last_white_opposing = 'B'
                     else:
-                        break
-        white_stability = len(white_stable) - len(white_unstable)
-        black_stability = len(black_stable) - len(black_unstable)
+                        last_white_empty.add((y, x))
+                elif othello.board[y][x] == 'E' or othello.board[y][x] == 'B':
+                    last_white_opposing = othello.board[y][x]
+                    last_white_empty = set()
+        else:
+            tracked_black = []
+            tracked_white = []
+
+        black_stability = len(tracked_black)
+        white_stability = len(tracked_white)
 
         if white_stability + black_stability != 0:  # Division by zero error
             heuristic_stability = (white_stability - black_stability) / (white_stability + black_stability)
@@ -586,6 +666,49 @@ class AI(LocalVersus):
             heuristic_stability = 0
 
         return 30 * heuristic_corner_capture + heuristic_mobility * 5 + heuristic_stability * 25 + heuristic_piece_count * 25
+
+    @staticmethod
+    def stability_iterator():
+        """
+        Will iterate through every move line to remove unstable pieces from stability list.
+        The position indicates extra code that should be run at certain points in time.
+        0 means do nothing, 1 reset last_known, 2 do things in 1 and check if there are still stable pieces.
+        """
+        position = 0
+        for y in range(BOARD_SIZE):
+            if position == 0:
+                position = 1
+            for x in range(BOARD_SIZE):
+                yield y, x, position
+                position = 0
+
+        position = 2
+        for x in range(BOARD_SIZE):
+            if position == 0:
+                position = 1
+            for y in range(BOARD_SIZE):
+                yield y, x, position
+                position = 0
+
+        position = 2
+        for y, x in LEFT_RIGHT_DIAGONALS:
+            if position == 0:
+                position = 1
+            while y < BOARD_SIZE and x < BOARD_SIZE:
+                yield y, x, position
+                position = 0
+                y += 1
+                x += 1
+
+        position = 2
+        for y, x in RIGHT_LEFT_DIAGONALS:
+            if position == 0:
+                position = 1
+            while y < BOARD_SIZE and x >= 0:
+                yield y, x, position
+                position = 0
+                y += 1
+                x += -1
 
     @staticmethod
     def dumb_line_iterator(y, x, line_diff):  # working in (y,x)
@@ -629,13 +752,12 @@ class AI(LocalVersus):
         elif lookahead <= 0:
             return AI.heuristic_utility(board)
 
-        if (maximising_player):
+        if maximising_player:
             score = float('-inf')
+            sorted_actions = AI.sort_actions(board.possible_moves["W"].keys(), board, check_move_first, 1, "W")
             a = alpha
-            for possible_action in sorted(board.possible_moves["W"].keys(), key=lambda x: x != check_move_first):
+            for new_board, possible_action in sorted_actions:
                 # Ensures the move check_move_first is checked first
-                new_board = deepcopy(board)
-                new_board.place(possible_action, "W")
                 evaluation = AI.minimax(new_board, a, beta, len(new_board.possible_moves["B"]) == 0, False,
                                         lookahead - 1, searched_moves)
                 if score < evaluation:
@@ -645,13 +767,11 @@ class AI(LocalVersus):
                 if a >= beta:
                     break
 
-
         else:
             score = float('inf')
+            sorted_actions = AI.sort_actions(board.possible_moves["B"].keys(), board, check_move_first, -1, "B")
             b = beta
-            for possible_action in sorted(board.possible_moves["B"].keys(), key=lambda x: x != check_move_first):
-                new_board = deepcopy(board)
-                new_board.place(possible_action, "B")
+            for new_board, possible_action in sorted_actions:
                 evaluation = AI.minimax(new_board, alpha, b, len(new_board.possible_moves["W"]) != 0, False,
                                         lookahead - 1, searched_moves)
                 if score > evaluation:
@@ -672,6 +792,29 @@ class AI(LocalVersus):
             return score, action
         else:
             return score
+
+    @staticmethod
+    def sort_actions(actions, board, check_move_first, factor, player):
+        """
+        Sorts the actions that can be done on an initial board in a manner so that
+        the first one is most likely to be the board layout with the highest score.
+        """
+
+        boards = []
+        for action in actions:
+            new_board = deepcopy(board)
+            new_board.place(action, player)
+            boards.append((new_board, action))
+        return sorted(boards, reverse=True, key=lambda x: (x[1] == check_move_first)*50000 + AI.utility(x[0],x[1], factor))
+
+    @staticmethod
+    def utility(board, move, factor):
+        """Will quickly return an estimation of a board's more computationally expensive estimation of utility."""
+
+        if AI.check_if_terminal(board):
+            return AI.terminal_utility(board) * 10 * factor
+        else:
+            return BOARD_WEIGHT[move[0]][move[1]]
 
 
 class LoadLocalVersus(LocalVersus):
@@ -800,7 +943,7 @@ class SavedGamesLoader(Othello):
         self.max_line = 1
         self.previous_states = []
         self.colour = 'W'
-        super().__init__()
+        super().__init__([[START_POS.get((x, y), "E") for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)])
 
     def load(self):
         """
@@ -878,6 +1021,8 @@ def load_othello(games, queue):
         try:
             loaded.load()
         except BoardError:
+            queue.put((LOCAL_IO["Fail"], loaded))
+        except ValueError:
             queue.put((LOCAL_IO["Fail"], loaded))
         else:
             queue.put((LOCAL_IO["Loader"], loaded))

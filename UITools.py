@@ -1,11 +1,14 @@
 """Python file used to define UI objects. Each object has an update, check_event and size_update function."""
 
 import time
+from functools import lru_cache
 from os import path
 from queue import Empty, Queue
 from threading import Thread
+import math
 
 import pygame as pg
+from pygame import gfxdraw
 
 import GIFLoader
 import VideoLoader
@@ -243,7 +246,8 @@ class SavedBoardButton(Button):
 class Paragraph:
     """Used to make text that correct fits in a certain bounding box."""
 
-    def __init__(self, text, pos, font, func_size, colour=(0, 0, 0), centered=False):   # TODO Do something if it cannot render
+    def __init__(self, text, pos, font, func_size, colour=(0, 0, 0),
+                 centered=False):  # TODO Do something if it cannot render
         self.text = text
         self.pos_func = pos
         self.pos = pos()
@@ -267,7 +271,7 @@ class Paragraph:
                 intermediate.set_colorkey((255, 255, 255))
 
             for word in line:
-                word_surface = self.font.render(word, 0, self.colour)
+                word_surface = self.render_font(self.font, word, self.colour)
                 word_width, word_height = word_surface.get_size()
                 if x + word_width >= max_width:
                     if self.centered:
@@ -283,7 +287,7 @@ class Paragraph:
                     surface.blit(word_surface, (x, y))
                 x += word_width + space
             if self.centered:
-                surface.blit(intermediate, ((max_width - x)/2, y))
+                surface.blit(intermediate, ((max_width - x) / 2, y))
             x = self.pos[0]  # Reset the x.
             y += word_height  # Start on new row.
         return y
@@ -292,6 +296,13 @@ class Paragraph:
         self.paragraph_size = self.func_size()
         self.pos = self.pos_func()
         return self.update(surface)
+
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def render_font(font, word, colour):
+        """Rendering fonts can take a while as such using a cache will save a lot of time."""
+
+        return font.render(word, True, colour)
 
 
 class Image:
@@ -318,7 +329,7 @@ class Image:
 class Board:
     """Object that deals with Othello grid, this is static."""
 
-    def __init__(self, rect, size, colour, line_colour):
+    def __init__(self, rect, size, colour, line_colour, board=None, possible=None):
         self.rect_func = rect
         self.rect = pg.Rect(0, 0, 0, 0)
         self.rect.size = (self.rect_func()[2], self.rect_func()[2])
@@ -326,9 +337,20 @@ class Board:
         self.size = size
         self.colour = colour
         self.line_colour = line_colour
+        if board is None:
+            self.board = [["E" for _x in range(BOARD_SIZE)] for _y in range(BOARD_SIZE)]
+        else:
+            self.board = board
+
+        if possible is None:
+            self.possible = []
+        else:
+            self.possible = possible
 
     def update(self, surface):
         self.draw_board(surface)
+        self.place_pieces(self.board, surface)
+        self.place_pos_pieces(self.possible, surface)
         return self.rect
 
     def draw_board(self, surface):
@@ -346,6 +368,13 @@ class Board:
                 thickness = 1
             pg.draw.line(surface, self.line_colour, (x, self.rect.y), (x, self.rect.y + self.rect.height), thickness)
             pg.draw.line(surface, self.line_colour, (self.rect.x, y), (self.rect.x + self.rect.height, y), thickness)
+
+    def place_pos_pieces(self, pos, surface):
+        """Place possible pieces."""
+
+        for (x, y) in sorted(pos, key=lambda key: (key[1] * BOARD_SIZE + key[0])):
+            position = self.pos_click((x, y))
+            pg.gfxdraw.aacircle(surface, int(position[0][0]), int(position[0][1]), position[1] // 2, (0, 0, 0))
 
     def pos_click(self, position):
         """Change board position to GUI position."""
@@ -374,11 +403,11 @@ class Board:
                 position = self.pos_click((x, y))
 
                 if board[y][x] == "B":
-                    pg.draw.circle(surface, DBLACK, position[0], position[1] / 2)
+                    pg.gfxdraw.filled_circle(surface, int(position[0][0]), int(position[0][1]), position[1] // 2, DBLACK)
                 elif board[y][x] == "W":
-                    pg.draw.circle(surface, LGREY, position[0], position[1] / 2)
+                    pg.gfxdraw.filled_circle(surface, int(position[0][0]), int(position[0][1]), position[1] // 2, LGREY)
 
-                pg.draw.circle(surface, (0, 0, 0), position[0], position[1] / 2, 1)
+                pg.gfxdraw.aacircle(surface, int(position[0][0]), int(position[0][1]), position[1] // 2, (0, 0, 0))
 
 
 class OthelloLogicBoard(Board):
@@ -392,19 +421,23 @@ class OthelloLogicBoard(Board):
         self.rect.x = 0
         self.rect.y = 0
         self.gui_to_oth = gui_to_oth
-        self._Print, self._Colour, self._Possible = (False, [["E" for _x in range(BOARD_SIZE)] for _y in range(BOARD_SIZE)]), (False, None), (False, {})
+        self.selected = 0
+        self.highlighting = False
+        self.redraw_board = False
+        self._Print, self._Colour, self._Possible = (False,
+                                                     [["E" for _x in range(BOARD_SIZE)] for _y in range(BOARD_SIZE)]), (
+                                                        False, None), (False, {})
 
     def update(self, surface, size_changed=False):
-        if (self._Possible[0] and self._Colour[0] and self._Print[0]) or size_changed:
+        if (self._Possible[0] and self._Colour[0] and self._Print[0]) or size_changed or self.redraw_board:
             self.board.fill(DRED)
             self.draw_board(self.board)
             self.place_pieces(self._Print[1], self.board)
             self.place_pos_pieces(self._Possible[1], self.board)
             self._Print, self._Colour, self._Possible = (False, self._Print[1]), (False, self._Colour[1]), (
                 False, self._Possible[1])
-            surface.blit(self.board, (self.board_rect.x, self.board_rect.y))
-        else:
-            surface.blit(self.board, (self.board_rect.x, self.board_rect.y))
+            self.redraw_board = False
+        surface.blit(self.board, (self.board_rect.x, self.board_rect.y))
         return self.rect
 
     def size_update(self, surface):
@@ -433,12 +466,41 @@ class OthelloLogicBoard(Board):
                 elif event.type == pg.MOUSEBUTTONDOWN:
                     self.gui_to_oth.put((LOCAL_IO["Click"], self.click_pos(position)))
 
+        elif event.type == pg.KEYDOWN and event.key == pg.K_TAB and len(self._Possible[1]) > 0:
+            if event.mod & pg.KMOD_SHIFT:
+                if self.highlighting:
+                    self.selected -= 1
+                    if self.selected < 0:
+                        self.selected = len(self._Possible[1]) - 1
+                else:
+                    self.highlighting = True
+                    self.selected = 0
+            else:
+                if self.highlighting:
+                    self.selected += 1
+                    if self.selected >= len(self._Possible[1]):
+                        self.selected = 0
+                else:
+                    self.highlighting = True
+                    self.selected = 0
+
+            self.redraw_board = True
+
+        elif self.highlighting and event.type == pg.KEYDOWN and event.key == pg.K_RETURN:
+            self.gui_to_oth.put((LOCAL_IO["Click"],
+                                 sorted(self._Possible[1].keys(), key=lambda key: (key[1] * BOARD_SIZE + key[0]))[
+                                     self.selected]))
+
     def place_pos_pieces(self, pos, surface):
         """Place possible pieces."""
 
-        for (x, y) in pos.keys():
+        i = 0
+        for (x, y) in sorted(pos.keys(), key=lambda key: (key[1] * BOARD_SIZE + key[0])):
             position = self.pos_click((x, y))
-            pg.draw.circle(surface, (0, 0, 0), position[0], position[1] / 2, 1)
+            if self.highlighting and i == self.selected:
+                pg.gfxdraw.aacircle(surface, int(position[0][0]), int(position[0][1]), position[1] // 2 + 1, YELLOW)
+            pg.gfxdraw.aacircle(surface, int(position[0][0]), int(position[0][1]), position[1] // 2, (0, 0, 0))
+            i += 1
 
     def queue_get(self, item):
         """Get the information from board logic."""
@@ -447,6 +509,7 @@ class OthelloLogicBoard(Board):
             self._Print = (True, item[1])
         elif item[0] == LOCAL_IO["Possible"]:
             self._Possible = (True, item[1])
+            self.highlighting = False
         elif item[0] == LOCAL_IO["Colour"]:
             self._Colour = (True, item[1])
 
@@ -492,19 +555,40 @@ class PieceCount:
         self.pos = func_pos()
         self.colour = colour
         self.playing = False
-        self.word_surface = self.font.render("0", 0, (0, 0, 0))
+        self.word_surface = self.font.render("0", True, (0, 0, 0))
         self.word_width, self.word_height = self.word_surface.get_size()
         self.func_count = func_count
         self.count = func_count()
 
     def update(self, surface):
-        if self.colour == "B":
-            pg.draw.circle(surface, DBLACK, self.count[1], self.count[0])
+        if self.playing:
+            pg.gfxdraw.aacircle(surface, int(self.count[1][0]), int(self.count[1][1]), int(self.count[0]) + 3, YELLOW)
+            pg.gfxdraw.filled_circle(surface, int(self.count[1][0]), int(self.count[1][1]), int(self.count[0]) + 3, YELLOW)
         else:
-            pg.draw.circle(surface, WHITE, self.count[1], self.count[0])
-        pg.draw.circle(surface, (0, 0, 0) * (not self.playing) + YELLOW * self.playing, self.count[1],
-                       self.count[0], 2 * self.playing + (not self.playing))
+            pg.gfxdraw.aacircle(surface, int(self.count[1][0]), int(self.count[1][1]), int(self.count[0]) + 1, (0,0,0))
+            pg.gfxdraw.filled_circle(surface, int(self.count[1][0]), int(self.count[1][1]), int(self.count[0]) + 1,
+                                     (0,0,0))
+        pg.gfxdraw.filled_circle(surface, int(self.count[1][0]), int(self.count[1][1]), int(self.count[0]), DBLACK if self.colour == "B" else WHITE)
+        pg.gfxdraw.aacircle(surface, int(self.count[1][0]), int(self.count[1][1]), int(self.count[0]), DBLACK if self.colour == "B" else WHITE)
         surface.blit(self.word_surface, (self.pos[0] - self.word_width / 2, self.pos[1] - self.word_height / 2))
+
+    @staticmethod
+    def big_aa_circle(surface, center, radius, width, color):
+        nb_pts = int(math.pi * radius / math.radians(3)) + 1  # Nb points
+        angle = (math.pi * 2) / (nb_pts - 1)  # Angle between each points
+        points = []
+        for i in range(nb_pts):  # Inner border
+            x = round(math.cos(angle * i) * (radius - width) + center[0])
+            y = round(
+                -math.sin(angle * i) * (radius - width) + center[1])  # - is for counter clockwise
+            points.append((x, y))  # Add point
+
+        for i in range(nb_pts - 1, -1, -1):  # Outer border
+            x = round(math.cos(angle * i) * (radius + width) + center[0])
+            y = round(-math.sin(angle * i) * (radius + width) + center[1])
+            points.append((x, y))  # Add point
+
+        pg.draw.polygon(surface, color, points)  # True is for filled polygon
 
     def size_update(self, surface):
         self.count = self.func_count()
@@ -515,7 +599,7 @@ class PieceCount:
         """Get the count and colour from the board logic."""
 
         if item[0] == LOCAL_IO["Count"]:
-            self.word_surface = self.font.render(str(item[1][self.colour]), 0, (0, 0, 0))
+            self.word_surface = self.font.render(str(item[1][self.colour]), True, (0, 0, 0))
             self.word_width, self.word_height = self.word_surface.get_size()
         elif item[0] == LOCAL_IO["Colour"]:
             self.playing = item[1] == self.colour
@@ -692,7 +776,8 @@ class Video:
         self.max_queue = Queue(self.max_look)
         self.queue = Queue()
         self.video_reader = Thread(target=VideoLoader.get_video,
-                                   args=(self.filename, self.size[2:4], self.queue, self.max_queue, self.aspect), daemon=True)
+                                   args=(self.filename, self.size[2:4], self.queue, self.max_queue, self.aspect),
+                                   daemon=True)
         self.video_reader.start()
 
     def pause(self):

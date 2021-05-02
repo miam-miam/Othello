@@ -8,12 +8,13 @@ The TCP part is used when establishing a connection and communicating with a pee
 import socket
 from queue import Queue, Empty
 from struct import pack
+from os import path
 from time import sleep
 
 from Constants import *
 
 
-class UDP():
+class UDP:
     """Class used for UDP connections."""
 
     def __init__(self, oth_to_network):
@@ -45,8 +46,6 @@ class UDP():
         self.sock_udp.close()
         self.sock_tcp_listen.close()
 
-        print("Connected!")
-
     def udp_loop(self):
         """Run when using UDP connections."""
 
@@ -60,7 +59,7 @@ class UDP():
                 self.sock_tcp_data.bind(("", 0))
                 self.sock_tcp_data.settimeout(1)
                 try:
-                    self.sock_tcp_data.connect((data[1][0], int_from_bytes(data[0])))
+                    self.sock_tcp_data.connect((data[1][0], int.from_bytes(data[0], "big")))
                 except socket.timeout:
                     print("Failed to connect.")
                     pass
@@ -86,29 +85,40 @@ class UDP():
             sleep(0.1)
 
 
-class TCP():
+class TCP:
     """Used for TCP connections."""
 
-    def __init__(self, sock_tcp_data, authority, gui_and_network_to_oth: Queue, oth_to_network: Queue):
+    def __init__(self, sock_tcp_data, authority, gui_and_network_to_oth: Queue, oth_to_network: Queue,
+                 network_to_load: Queue,
+                 previous_game: str = None):
 
         self.sock_tcp_data = sock_tcp_data
         self.authority = authority
         self.gui_and_network_to_oth = gui_and_network_to_oth
         self.oth_to_network = oth_to_network
+        self.network_to_load = network_to_load
+        self.buffer = bytearray()
+        self.previous_game = previous_game
 
         if self.authority:
             self.colour = "B"
             self.gui_and_network_to_oth.put((LOCAL_IO["Net_Colour"], "B"))
-            self.sock_tcp_data.send(TCP_DATA_TYPE["Opponent_Colour"] + b'WW')
+            self.send_data(TCP_DATA_TYPE["Opponent_Colour"] + b'W')
+            if previous_game is None:
+                self.send_data(TCP_DATA_TYPE["Initial_Moves"] + b'\x00')
+            else:
+                self.send_data(TCP_DATA_TYPE["Initial_Moves"] + b'\x01' + bytes(self.previous_game, encoding="utf-8"))
+                self.network_to_load.put((LOCAL_IO["Net_Loaded"], self.previous_game))
 
         self.tcp_loop()
+        print("Finished TCP loop")
 
     def tcp_loop(self):
         """Run when using TCP connections."""
 
         while True:
             try:
-                data = self.sock_tcp_data.recv(256)
+                datas = self.receive_data(self.sock_tcp_data.recv(256))
             except socket.timeout:
                 pass
             except BlockingIOError:
@@ -116,16 +126,35 @@ class TCP():
             except ConnectionResetError:
                 break
             else:
-                if data == b'':
-                    break
+                for data in datas:
 
-                elif data[0:1] == TCP_DATA_TYPE["Opponent_Colour"]:
-                    self.colour = data[1:2].decode('utf-8')
-                    self.gui_and_network_to_oth.put((LOCAL_IO["Net_Colour"], self.colour))
+                    if data == b'':
+                        return
 
-                elif data[0:1] == TCP_DATA_TYPE["Move"]:
-                    position = (data[1:].decode('utf-8')[0], data[1:].decode('utf-8')[1])
-                    self.gui_and_network_to_oth.put((LOCAL_IO["Net_Click"], position))
+                    elif data is None:
+                        pass
+
+                    elif data[0:1] == TCP_DATA_TYPE["Opponent_Colour"]:
+                        self.colour = data[1:2].decode('utf-8')  # using [1:2] as using [1] would transform into int
+                        self.gui_and_network_to_oth.put((LOCAL_IO["Net_Colour"], self.colour))
+
+                    elif data[0:1] == TCP_DATA_TYPE["Move"]:
+                        position = data[1], data[2]  # [1] automatically transforms into int
+                        self.gui_and_network_to_oth.put((LOCAL_IO["Net_Click"], position))
+
+                    elif data[0:1] == TCP_DATA_TYPE["Initial_Moves"]:
+                        if data[1] == 0:  # Authority did not give moves to play
+                            if self.authority:
+                                self.network_to_load.put((LOCAL_IO["Net_Loaded"], None))
+                            elif self.previous_game is not None:
+                                self.send_data(
+                                    TCP_DATA_TYPE["Initial_Moves"] + b'\x01' + bytes(self.previous_game, encoding="utf-8"))
+                                self.network_to_load.put((LOCAL_IO["Net_Loaded"], self.previous_game))
+                            else:
+                                self.network_to_load.put((LOCAL_IO["Net_Loaded"], None))
+                                self.send_data(TCP_DATA_TYPE["Initial_Moves"] + b'\x00')
+                        else:  # Load moves
+                            self.network_to_load.put((LOCAL_IO["Net_Loaded"], data[2:].decode("utf-8")))
 
             try:
                 get = self.oth_to_network.get(False)
@@ -133,17 +162,46 @@ class TCP():
                 pass
             else:
                 if get[0] == LOCAL_IO["Net_Send"]:
-                    position = str(get[1][0]).encode('utf-8') + str(get[1][1]).encode('utf-8')
-                    print("Sending move")
-                    self.sock_tcp_data.send(TCP_DATA_TYPE["Move"] + position)
+                    position = get[1][0].to_bytes(1, "big") + get[1][1].to_bytes(1, "big")
+                    self.send_data(TCP_DATA_TYPE["Move"] + position)
+
                 elif get[0] == LOCAL_IO["Net_End"]:
                     self.sock_tcp_data.close()
                     exit()
 
-
             sleep(0.1)
 
-        print("Disconnected!")
+
+    def send_data(self, data):
+        """Sends data through TCP socket with size bytes"""
+
+        data = (len(data) + 2).to_bytes(2, "big") + bytes(data)
+        self.sock_tcp_data.send(data)
+
+
+    def receive_data(self, data):
+        """Receives data through TCP socket ensuring it is the correct size"""
+
+        if data == b"":
+            yield data
+            return
+
+        while len(data) > 0:
+            if len(self.buffer) > 0:
+                cutoff = int.from_bytes(self.buffer[0:2], "big") - len(self.buffer)
+            else:
+                cutoff = int.from_bytes(data[0:2], "big")
+
+            if cutoff > len(data):
+                self.buffer = self.buffer + data[cutoff:]
+                return None
+
+            else:
+                return_val = (self.buffer + data[:cutoff])[2:]  # Remove size bytes
+                data = data[cutoff:]
+                self.buffer = bytearray()
+                yield return_val
+        return
 
 
 def int_to_bytes(x):
@@ -152,16 +210,14 @@ def int_to_bytes(x):
     return x.to_bytes((x.bit_length() + 7) // 8, 'big')
 
 
-def int_from_bytes(x_bytes):
-    """Changes bytes into an unsigned integer."""
-
-    return int.from_bytes(x_bytes, 'big')
-
-def main(gui_and_network_to_oth, oth_to_network, network_to_load):
+def main(gui_and_network_to_oth, oth_to_network, network_to_load, save_name=None, current_line=None):
     """Run by thread to create UDP and TCP connections."""
 
     udp = UDP(oth_to_network)
-    network_to_load.put((LOCAL_IO["Net_Loaded"], None))
-    TCP(udp.sock_tcp_data, udp.authority, gui_and_network_to_oth, oth_to_network)
+    if save_name is not None:
+        with open(path.join(SAVE_DIR, save_name), 'r') as file:
+            save_name = file.readlines()[0:current_line]
+        save_name = "".join(save_name)
+    TCP(udp.sock_tcp_data, udp.authority, gui_and_network_to_oth, oth_to_network, network_to_load, save_name)
 
     exit()

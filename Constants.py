@@ -23,12 +23,6 @@ YELLOW = (241, 196, 15)
 BUTTON_STYLE = {"hover_colour": DBLUE, "clicked_colour": DBLUE, "clicked_font_colour": LBLACK,
                 "hover_font_colour": DBLACK}
 
-HELP_TEXT1 = "Othello is a strategy board game for two players (Black and White), played on an 8 by 8 board. The game traditionally begins with four pieces placed in the middle of the board as shown below with Black moving first."
-HELP_TEXT2 = "Black must place a black piece on the board, in such a way that there is at least one straight (horizontal, vertical, or diagonal) occupied line between the new piece and another black piece, with one or more contiguous white pieces between them. In this starting position, Black has 4 options, indicated by the translucent pieces."
-HELP_TEXT3 = "After placing the piece, Black flips all white pieces lying on a straight line between the new piece and any existing black pieces. All flipped pieces are now black. If Black decides to place a piece in the topmost location, one white piece gets flipped, and the board now looks like this."
-HELP_TEXT4 = "Now White plays. This player operates under the same rules, with the roles reversed: White lays down a white piece, causing black pieces to flip. Possibilities at this time would be as such."
-HELP_TEXT5 = "Players alternate taking turns. If a player does not have any valid moves, play passes back to the other player. When neither player can move, the game ends. A game of Othello may end before the board is completely filled.\nThe player with the most pieces on the board at the end of the game wins. If both players have the same number of pieces, then the game is a draw."
-
 CONTEXT_BUTTON_TEXT0 = "Play against friends on the same computer."
 CONTEXT_BUTTON_TEXT1 = "Play against an AI on various difficulty settings."
 CONTEXT_BUTTON_TEXT2 = "Learn how to play so you can become a real pro."
@@ -52,7 +46,7 @@ FULL_NAME = {"W": "White", "B": "Black", "E": "Empty"}
 
 XOR_INDICES = {"W": 1, "B": 2, "E": 0}
 
-DIFFICULTY_TO_AI_CONFIG = {"Easy": (None, None), "Normal": (5,3), "Hard": (20, 3), "Insane": (24,10)}
+DIFFICULTY_TO_AI_CONFIG = {"Easy": (None, None), "Normal": (5, 3), "Hard": (20, 3), "Insane": (24, 10)}
 
 # In y,x notation
 SAFE_LINES = [(0, 0, (0, 1)), (0, 0, (1, 0)),
@@ -74,11 +68,38 @@ CONFETTI_DURATION = 1 / 30
 MULTICAST_GROUP = "224.1.1.1"
 MULTICAST_PORT = 1785
 
-TCP_DATA_TYPE = {"Opponent_Colour": b'0', "Move": b'1'}
+TCP_DATA_TYPE = {"Opponent_Colour": b'\x00', "Move": b'\x01', "Initial_Moves": b'\x02'}
 
 LOADING_CONN_MESSAGE = "Awaiting connection..."
 
 CON_ERROR_MESSAGE = "Connection error: Peer Disconnected."
 
-LOAD_DURATION = [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
+MAIN_MENU_TEXT = "Othello"
 
+LOAD_DURATION = [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+                 30, 30, 30, 30, 30, 30]
+
+HELP_TEXT1 = "Othello is a strategy board game for two players (Black and White), played on an 8 by 8 board.\n \nBlack must place a black piece on the board, in such a way that there is at least one straight (horizontal, vertical, or diagonal) occupied line between the new piece and another black piece, with one or more contiguous white pieces between them."
+HELP_TEXT2 = "After placing the piece, Black flips all white pieces lying on a straight line between the new piece and any existing black pieces. All flipped pieces are now black. \nIf Black decides to place a piece in the topmost location, one white piece gets flipped."
+HELP_TEXT3 = "White operates under the same rules, with the roles reversed: White lays down a white piece, causing black pieces to flip. Possibilities at this time would be as such."
+HELP_TEXT4 = "Players alternate taking turns. If a player does not have any valid moves, play passes back to the other player. \nWhen neither player can move, the game ends. A game of Othello may end before the board is completely filled.\nThe player with the most pieces on the board at the end of the game wins. If both players have the same number of pieces, then the game is a draw."
+HELP_BOARD = [[START_POS.get((x, y), "E") for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)]
+HELP_BOARD[4][4] = "B"
+HELP_BOARD[5][4] = "B"
+LAST_BOARD = [[START_POS.get((x, y), "E") for x in range(BOARD_SIZE)] for y in range(BOARD_SIZE)]
+HELP_POSSIBLE1 = [(3, 2), (2, 3), (5, 4), (4, 5)]
+HELP_POSSIBLE2 = [(5, 3), (5, 5), (3, 5)]
+
+# In y,x form
+LEFT_RIGHT_DIAGONALS = [(y, 0) for y in range(BOARD_SIZE - 2)] + [(0, x) for x in
+                                                                  range(1, BOARD_SIZE - 2)]  # \ from top
+RIGHT_LEFT_DIAGONALS = [(y, BOARD_SIZE - 1) for y in range(BOARD_SIZE - 2)] + [(0, x) for x in
+                                                                               range(2, BOARD_SIZE)]  # / from top
+BOARD_WEIGHT = [[100,-10, 11,  6,  6, 11,-10,100],
+                [-10,-20,  1,  2,  2,  1,-20,-10],
+                [ 10,  1,  5,  4,  4,  5,  1, 10],
+                [  6,  2,  4,  2,  2,  4,  2,  6],
+                [  6,  2,  4,  2,  2,  4,  2,  6],
+                [ 10,  1,  5,  4,  4,  5,  1, 10],
+                [-10,-20,  1,  2,  2,  1,-20,-10],
+                [100,-10, 11,  6,  6, 11,-10,100]]
